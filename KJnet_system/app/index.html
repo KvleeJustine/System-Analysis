@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KJ Net – Login</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-icon">
+        <svg width="32" height="32" fill="none" stroke="white" stroke-width="2" viewBox="0 0 24 24">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <path d="M8 21h8M12 17v4"/>
+        </svg>
+      </div>
+      <h1>KJ Net</h1>
+      <p>Internet Cafe Management System</p>
+    </div>
+
+    <div id="login-error" class="alert alert-danger" style="display:none;"></div>
+
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input type="text" id="login-username" class="form-control" placeholder="Enter username" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input type="password" id="login-password" class="form-control" placeholder="Enter password">
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:15px;margin-top:4px;" onclick="doLogin()">
+      Sign In
+    </button>
+
+    <p class="text-center text-muted" style="font-size:12px;margin-top:16px;">
+      Default: <b>admin / admin123</b> &nbsp;|&nbsp; <b>staff / staff123</b>
+    </p>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  // Redirect if already logged in
+  if (DB.getSession()) window.location.href = 'dashboard.html';
+
+  // Allow Enter key to login
+  document.getElementById('login-password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+  document.getElementById('login-username').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('login-password').focus();
+  });
+
+  function doLogin() {
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errEl    = document.getElementById('login-error');
+
+    if (!username || !password) {
+      errEl.textContent = 'Please enter your username and password.';
+      errEl.style.display = 'flex';
+      return;
+    }
+
+    const user = Auth.login(username, password);
+    if (user) {
+      window.location.href = 'dashboard.html';
+    } else {
+      errEl.textContent = 'Invalid username or password.';
+      errEl.style.display = 'flex';
+      document.getElementById('login-password').value = '';
+      document.getElementById('login-password').focus();
+    }
+  }
+</script>
+</body>
+</html>

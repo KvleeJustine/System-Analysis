@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Settings – KJ Net</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar-mount"></div>
+<div class="main">
+  <header class="topbar"><div id="topbar-title"></div><div id="topbar-clock"></div></header>
+  <div class="content">
+    <div id="alert-area"></div>
+    <div class="grid-2" style="gap:18px;">
+
+      <!-- Change Password -->
+      <div class="card">
+        <div class="card-header">
+          <svg width="17" height="17" fill="none" stroke="var(--primary)" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          <h3 class="card-title">Change Password</h3>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">Current Password</label>
+            <input type="password" id="cp-current" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label">New Password</label>
+            <input type="password" id="cp-new" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirm New Password</label>
+            <input type="password" id="cp-confirm" class="form-control">
+          </div>
+          <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
+        </div>
+      </div>
+
+      <!-- Computers -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Computer Settings</h3>
+          <button class="btn btn-sm btn-primary" onclick="openAddPc()">+ Add PC</button>
+        </div>
+        <div class="table-wrap" id="pc-table"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PC Modal -->
+<div class="modal-overlay" id="modal-pc">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="mpc-title">Add Computer</h3>
+      <button class="modal-close" onclick="closeModal('modal-pc')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="mpc-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">PC Name</label>
+          <input type="text" id="mpc-name" class="form-control" placeholder="PC-11">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rate / Hour (₱)</label>
+          <input type="number" id="mpc-rate" class="form-control" value="30" step="0.5">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Specifications</label>
+        <input type="text" id="mpc-specs" class="form-control">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-pc')">Cancel</button>
+      <button class="btn btn-primary" onclick="savePc()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/layout.js"></script>
+<script>
+Layout.init('Settings', 'settings');
+const me = Auth.currentUser();
+if (me.role !== 'admin') window.location.href = 'dashboard.html';
+
+function showAlert(msg, type='success') {
+  const el = document.getElementById('alert-area');
+  el.innerHTML = `<div class="alert alert-${type}" data-auto-dismiss>${msg}</div>`;
+  Layout.autoDismiss();
+}
+
+function changePassword() {
+  const cur  = document.getElementById('cp-current').value;
+  const nw   = document.getElementById('cp-new').value;
+  const conf = document.getElementById('cp-confirm').value;
+  const user = DB.getUsers().find(u => u.id === me.id);
+  if (user.password !== cur) { showAlert('Current password is incorrect.', 'danger'); return; }
+  if (nw.length < 6) { showAlert('New password must be at least 6 characters.', 'danger'); return; }
+  if (nw !== conf) { showAlert('Passwords do not match.', 'danger'); return; }
+  DB.updateUser(me.id, { password: nw });
+  showAlert('Password changed successfully.');
+  document.getElementById('cp-current').value = '';
+  document.getElementById('cp-new').value = '';
+  document.getElementById('cp-confirm').value = '';
+}
+
+function renderPcTable() {
+  const pcs = DB.getComputers();
+  const sb  = {available:'badge-green',occupied:'badge-orange',maintenance:'badge-gray'};
+  document.getElementById('pc-table').innerHTML =
+    `<table>
+      <thead><tr><th>Name</th><th>Rate/hr</th><th>Specs</th><th>Status</th><th></th></tr></thead>
+      <tbody>${pcs.map(pc => `
+        <tr>
+          <td class="fw-semibold">${pc.name}</td>
+          <td>${DB.formatMoney(pc.rate_per_hour)}</td>
+          <td class="text-muted" style="font-size:12px;">${pc.specs||'—'}</td>
+          <td><span class="badge ${sb[pc.status]||'badge-gray'}">${pc.status.charAt(0).toUpperCase()+pc.status.slice(1)}</span></td>
+          <td>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline" onclick='openEditPc(${JSON.stringify(pc)})'>Edit</button>
+              ${pc.status==='available'?`<button class="btn btn-sm btn-danger" onclick="removePc(${pc.id})">Remove</button>`:''}
+            </div>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function openAddPc() {
+  document.getElementById('mpc-title').textContent = 'Add Computer';
+  document.getElementById('mpc-id').value = '';
+  document.getElementById('mpc-name').value = '';
+  document.getElementById('mpc-rate').value = 30;
+  document.getElementById('mpc-specs').value = '';
+  openModal('modal-pc');
+}
+
+function openEditPc(pc) {
+  document.getElementById('mpc-title').textContent = 'Edit Computer';
+  document.getElementById('mpc-id').value   = pc.id;
+  document.getElementById('mpc-name').value  = pc.name;
+  document.getElementById('mpc-rate').value  = pc.rate_per_hour;
+  document.getElementById('mpc-specs').value = pc.specs||'';
+  openModal('modal-pc');
+}
+
+function savePc() {
+  const id    = parseInt(document.getElementById('mpc-id').value);
+  const name  = document.getElementById('mpc-name').value.trim();
+  const rate  = parseFloat(document.getElementById('mpc-rate').value)||30;
+  const specs = document.getElementById('mpc-specs').value.trim();
+  if (!name) { Layout.toast('Name required.', 'danger'); return; }
+  if (id) {
+    DB.updateComputer(id, { name, rate_per_hour: rate, specs });
+    showAlert('Computer updated.');
+  } else {
+    DB.addComputer({ name, status:'available', rate_per_hour: rate, specs });
+    showAlert('Computer added.');
+  }
+  closeModal('modal-pc');
+  renderPcTable();
+}
+
+function removePc(id) {
+  if (!confirm('Remove this PC?')) return;
+  DB.deleteComputer(id);
+  renderPcTable();
+  Layout.toast('Computer removed.');
+}
+
+renderPcTable();
+</script>
+</body>
+</html>

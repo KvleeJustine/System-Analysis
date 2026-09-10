@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Computers – KJ Net</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar-mount"></div>
+<div class="main">
+  <header class="topbar">
+    <div id="topbar-title"></div>
+    <div id="topbar-clock"></div>
+  </header>
+  <div class="content">
+    <div id="alert-area"></div>
+
+    <!-- Status bar -->
+    <div class="d-flex align-center justify-between mb-3" id="status-bar"></div>
+
+    <!-- Grid -->
+    <div class="grid-auto" id="pc-grid"></div>
+  </div>
+</div>
+
+<!-- Modal: Start Session -->
+<div class="modal-overlay" id="modal-start">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Start Session – <span id="m-start-pc-name"></span></h3>
+      <button class="modal-close" onclick="closeModal('modal-start')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="position:relative;">
+        <label class="form-label">Customer Name <span style="color:red">*</span></label>
+        <input type="text" id="m-cust-name" class="form-control" placeholder="Type name or pick a registered customer" autocomplete="off" oninput="filterCusts(this.value)">
+        <div class="autocomplete-list" id="cust-suggest"></div>
+      </div>
+      <div class="alert alert-info" style="font-size:12.5px;">ℹ Session timer starts immediately.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-start')">Cancel</button>
+      <button class="btn btn-primary" onclick="doStartSession()">▶ Start Session</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: End Session -->
+<div class="modal-overlay" id="modal-end">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">End Session</h3>
+      <button class="modal-close" onclick="closeModal('modal-end')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="card" style="background:var(--g50);box-shadow:none;border:1px solid var(--g200);margin-bottom:14px;">
+        <div class="card-body" style="padding:14px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13.5px;">
+            <div><span class="text-muted">Customer:</span><br><b id="me-cust"></b></div>
+            <div><span class="text-muted">Started:</span><br><b id="me-start"></b></div>
+            <div><span class="text-muted">Duration:</span><br><b id="me-dur" style="color:var(--warning)"></b></div>
+            <div><span class="text-muted">PC Charge:</span><br><b id="me-pc-cost" style="color:var(--success)"></b></div>
+            <div><span class="text-muted">Services:</span><br><b id="me-svc"></b></div>
+            <div><span class="text-muted">Total:</span><br><b id="me-total" style="color:var(--primary);font-size:16px;"></b></div>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Payment Method</label>
+        <select id="me-method" class="form-control">
+          <option value="cash">💵 Cash</option>
+          <option value="gcash">📱 GCash</option>
+          <option value="maya">💜 Maya</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Amount Paid (₱)</label>
+          <input type="number" id="me-paid" class="form-control" step="0.01" min="0" oninput="calcChange()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Change</label>
+          <input type="text" id="me-change" class="form-control" readonly style="background:var(--g50);font-weight:700;color:var(--success);">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-end')">Cancel</button>
+      <button class="btn btn-success" onclick="doEndSession()">✔ Confirm & Print Receipt</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add PC -->
+<div class="modal-overlay" id="modal-add-pc">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Add Computer</h3>
+      <button class="modal-close" onclick="closeModal('modal-add-pc')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">PC Name</label>
+          <input type="text" id="ap-name" class="form-control" placeholder="e.g. PC-11">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rate / Hour (₱)</label>
+          <input type="number" id="ap-rate" class="form-control" value="30" step="0.5">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Specifications</label>
+        <input type="text" id="ap-specs" class="form-control" placeholder="e.g. Intel i5, 8GB RAM">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-add-pc')">Cancel</button>
+      <button class="btn btn-primary" onclick="doAddPc()">Add Computer</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/layout.js"></script>
+<script>
+Layout.init('Computer Management', 'computers');
+const user = Auth.currentUser();
+
+let activePcId = null;
+let activeSessionId = null;
+let endTotal = 0;
+
+function showAlert(msg, type='success') {
+  const el = document.getElementById('alert-area');
+  el.innerHTML = `<div class="alert alert-${type}" data-auto-dismiss>${msg}</div>`;
+  Layout.autoDismiss();
+}
+
+function render() {
+  const computers = DB.getComputers();
+  const available = computers.filter(c=>c.status==='available').length;
+  const occupied  = computers.filter(c=>c.status==='occupied').length;
+  const maint     = computers.filter(c=>c.status==='maintenance').length;
+
+  document.getElementById('status-bar').innerHTML = `
+    <div class="d-flex gap-3">
+      <span class="badge badge-green">● ${available} Available</span>
+      <span class="badge badge-orange">● ${occupied} In Use</span>
+      <span class="badge badge-gray">● ${maint} Maintenance</span>
+    </div>
+    ${user.role === 'admin' ? `<button class="btn btn-primary" onclick="openModal('modal-add-pc')">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add Computer</button>` : ''}`;
+
+  const grid = document.getElementById('pc-grid');
+  grid.innerHTML = computers.map(pc => {
+    const session = DB.getActiveSession(pc.id);
+    if (pc.status === 'occupied' && session) {
+      const start = new Date(session.start_time);
+      const mins  = Math.max(1, Math.round((Date.now() - start) / 60000));
+      const cost  = (mins / 60) * pc.rate_per_hour;
+      return `
+      <div class="pc-card occupied" id="pc-${pc.id}" data-start="${start.getTime()}" data-rate="${pc.rate_per_hour}">
+        <div class="pc-card-header">
+          <span class="pc-name">${pc.name}</span>
+          <span class="badge badge-orange">Busy</span>
+        </div>
+        <div class="pc-info">
+          <span>👤 ${session.customer_name || 'Walk-in'}</span>
+          <span>🕐 ${DB.formatTime(session.start_time)}</span>
+        </div>
+        <div class="pc-timer" id="timer-${pc.id}">${Math.floor(mins/60)}h ${mins%60}m</div>
+        <div class="pc-cost" id="cost-${pc.id}">${DB.formatMoney(cost)}</div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-success btn-sm flex-1" onclick="openEndSession(${pc.id},${session.id})">End Session</button>
+          <a href="services.html?session=${session.id}&pc=${encodeURIComponent(pc.name)}" class="btn btn-outline btn-sm">+ Service</a>
+        </div>
+      </div>`;
+    } else if (pc.status === 'available') {
+      return `
+      <div class="pc-card available">
+        <div class="pc-card-header">
+          <span class="pc-name">${pc.name}</span>
+          <span class="badge badge-green">Free</span>
+        </div>
+        <div class="pc-info">
+          <span>${pc.specs || ''}</span>
+          <span>Rate: ${DB.formatMoney(pc.rate_per_hour)}/hr</span>
+        </div>
+        <div style="margin-top:10px;">
+          <button class="btn btn-primary btn-sm" style="width:100%;" onclick="openStartSession(${pc.id},'${pc.name.replace(/'/g,"\\'")}')">Start Session</button>
+        </div>
+        ${user.role === 'admin' ? `
+        <div class="d-flex gap-2" style="margin-top:8px;">
+          <button class="btn btn-secondary btn-sm flex-1" onclick="setMaintenance(${pc.id})">Set Maintenance</button>
+          <button class="btn btn-sm btn-outline" onclick="openEditPc(${pc.id})">Edit</button>
+        </div>` : ''}
+      </div>`;
+    } else {
+      return `
+      <div class="pc-card maintenance">
+        <div class="pc-card-header">
+          <span class="pc-name">${pc.name}</span>
+          <span class="badge badge-gray">Maint.</span>
+        </div>
+        <div class="pc-info"><span style="color:var(--warning);">Under maintenance</span></div>
+        ${user.role === 'admin' ? `<button class="btn btn-success btn-sm" style="width:100%;margin-top:10px;" onclick="setAvailable(${pc.id})">Set Available</button>` : ''}
+      </div>`;
+    }
+  }).join('');
+}
+
+// Start session
+function openStartSession(pcId, pcName) {
+  activePcId = pcId;
+  document.getElementById('m-start-pc-name').textContent = pcName;
+  document.getElementById('m-cust-name').value = '';
+  document.getElementById('cust-suggest').style.display = 'none';
+  openModal('modal-start');
+  setTimeout(() => document.getElementById('m-cust-name').focus(), 200);
+}
+
+function doStartSession() {
+  const name = document.getElementById('m-cust-name').value.trim();
+  if (!name) { Layout.toast('Please enter a customer name.', 'danger'); return; }
+  const custs = DB.getCustomers();
+  const found = custs.find(c => c.name.toLowerCase() === name.toLowerCase());
+  DB.addSession({ computer_id: activePcId, customer_id: found ? found.id : null, customer_name: name, start_time: new Date().toISOString(), status: 'active', staff_id: user.id });
+  DB.updateComputer(activePcId, { status: 'occupied' });
+  closeModal('modal-start');
+  showAlert(`Session started for ${name}.`);
+  render();
+}
+
+// Customer autocomplete
+function filterCusts(val) {
+  const box = document.getElementById('cust-suggest');
+  if (!val.trim()) { box.style.display='none'; return; }
+  const matches = DB.getCustomers().filter(c => c.name.toLowerCase().includes(val.toLowerCase()));
+  if (!matches.length) { box.style.display='none'; return; }
+  box.innerHTML = matches.slice(0,8).map(c =>
+    `<div onclick="selectCust('${c.name.replace(/'/g,"\\'")}')"><b>${c.name}</b> <small class="text-muted">${c.phone||''}</small></div>`
+  ).join('');
+  box.style.display = 'block';
+}
+
+function selectCust(name) {
+  document.getElementById('m-cust-name').value = name;
+  document.getElementById('cust-suggest').style.display = 'none';
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#cust-suggest') && !e.target.closest('#m-cust-name')) {
+    const b = document.getElementById('cust-suggest');
+    if (b) b.style.display = 'none';
+  }
+});
+
+// End session
+function openEndSession(pcId, sessionId) {
+  activePcId = pcId;
+  activeSessionId = sessionId;
+  const session = DB.getSessions().find(s => s.id === sessionId);
+  const pc = DB.getComputers().find(c => c.id === pcId);
+  const mins   = Math.max(1, Math.round((Date.now() - new Date(session.start_time)) / 60000));
+  const pcCost = parseFloat(((mins / 60) * pc.rate_per_hour).toFixed(2));
+  const svcCost = DB.getServicesTotalForSession(sessionId);
+  endTotal = parseFloat((pcCost + svcCost).toFixed(2));
+  const h = Math.floor(mins/60), m = mins%60;
+  document.getElementById('me-cust').textContent  = session.customer_name || 'Walk-in';
+  document.getElementById('me-start').textContent = DB.formatTime(session.start_time);
+  document.getElementById('me-dur').textContent   = (h>0?h+'h ':'')+m+'m';
+  document.getElementById('me-pc-cost').textContent = DB.formatMoney(pcCost);
+  document.getElementById('me-svc').textContent   = svcCost > 0 ? DB.formatMoney(svcCost) : 'None';
+  document.getElementById('me-total').textContent = DB.formatMoney(endTotal);
+  document.getElementById('me-paid').value = endTotal.toFixed(2);
+  document.getElementById('me-change').value = '₱0.00';
+  openModal('modal-end');
+}
+
+function calcChange() {
+  const paid = parseFloat(document.getElementById('me-paid').value) || 0;
+  document.getElementById('me-change').value = DB.formatMoney(Math.max(0, paid - endTotal));
+}
+
+function doEndSession() {
+  const paid   = parseFloat(document.getElementById('me-paid').value) || 0;
+  const method = document.getElementById('me-method').value;
+  if (paid < endTotal) { Layout.toast('Amount paid is less than total.', 'danger'); return; }
+
+  const session = DB.getSessions().find(s => s.id === activeSessionId);
+  const pc = DB.getComputers().find(c => c.id === activePcId);
+  const endTime = new Date().toISOString();
+  const mins    = Math.max(1, Math.round((new Date(endTime) - new Date(session.start_time)) / 60000));
+  const pcCost  = parseFloat(((mins / 60) * pc.rate_per_hour).toFixed(2));
+  const svcCost = DB.getServicesTotalForSession(activeSessionId);
+  const total   = parseFloat((pcCost + svcCost).toFixed(2));
+  const change  = parseFloat((paid - total).toFixed(2));
+
+  DB.updateSession(activeSessionId, { end_time: endTime, duration_minutes: mins, amount: pcCost, status: 'completed' });
+  DB.updateComputer(activePcId, { status: 'available' });
+
+  const txn = DB.addTransaction({
+    session_id: activeSessionId,
+    customer_name: session.customer_name || 'Walk-in',
+    subtotal_computer: pcCost,
+    subtotal_services: svcCost,
+    total_amount: total,
+    payment_method: method,
+    amount_paid: paid,
+    change_amount: change,
+    staff_id: user.id,
+  });
+
+  closeModal('modal-end');
+  render();
+  // Open receipt
+  window.open(`receipt.html?txn=${txn.id}`, '_blank', 'width=420,height=650');
+}
+
+function setMaintenance(pcId) { DB.updateComputer(pcId,{status:'maintenance'}); render(); }
+function setAvailable(pcId)   { DB.updateComputer(pcId,{status:'available'});   render(); }
+
+function openEditPc(pcId) {
+  const pc = DB.getComputers().find(c => c.id === pcId);
+  document.getElementById('ap-name').value  = pc.name;
+  document.getElementById('ap-rate').value  = pc.rate_per_hour;
+  document.getElementById('ap-specs').value = pc.specs || '';
+  document.getElementById('ap-name').dataset.editId = pcId;
+  openModal('modal-add-pc');
+}
+
+function doAddPc() {
+  const name  = document.getElementById('ap-name').value.trim();
+  const rate  = parseFloat(document.getElementById('ap-rate').value) || 30;
+  const specs = document.getElementById('ap-specs').value.trim();
+  const editId = parseInt(document.getElementById('ap-name').dataset.editId);
+  if (!name) { Layout.toast('PC name required.', 'danger'); return; }
+  if (editId) {
+    DB.updateComputer(editId, { name, rate_per_hour: rate, specs });
+    delete document.getElementById('ap-name').dataset.editId;
+  } else {
+    DB.addComputer({ name, status:'available', rate_per_hour: rate, specs });
+  }
+  closeModal('modal-add-pc');
+  showAlert(editId ? 'Computer updated.' : `${name} added.`);
+  render();
+}
+
+// Live timer update
+setInterval(() => {
+  DB.getComputers().filter(c=>c.status==='occupied').forEach(pc => {
+    const s = DB.getActiveSession(pc.id);
+    if (!s) return;
+    const mins = Math.max(1, Math.round((Date.now() - new Date(s.start_time)) / 60000));
+    const cost = (mins / 60) * pc.rate_per_hour;
+    const tEl = document.getElementById('timer-'+pc.id);
+    const cEl = document.getElementById('cost-'+pc.id);
+    if (tEl) tEl.textContent = Math.floor(mins/60)+'h '+(mins%60)+'m';
+    if (cEl) cEl.textContent = DB.formatMoney(cost);
+  });
+}, 10000);
+
+render();
+</script>
+</body>
+</html>

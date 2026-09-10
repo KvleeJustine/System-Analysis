@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Customers – KJ Net</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar-mount"></div>
+<div class="main">
+  <header class="topbar"><div id="topbar-title"></div><div id="topbar-clock"></div></header>
+  <div class="content">
+    <div id="alert-area"></div>
+    <div class="d-flex align-center justify-between mb-3">
+      <div class="search-wrap">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="cust-search" placeholder="Search name, phone, email…" oninput="renderTable()">
+      </div>
+      <button class="btn btn-primary" onclick="openAddModal()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Register Customer
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">All Customers</h3>
+        <span class="badge badge-blue" id="cust-count">0 total</span>
+      </div>
+      <div class="table-wrap" id="cust-table"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="modal-cust">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="mc-title">Register Customer</h3>
+      <button class="modal-close" onclick="closeModal('modal-cust')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="mc-id">
+      <div class="form-group">
+        <label class="form-label">Full Name <span style="color:red">*</span></label>
+        <input type="text" id="mc-name" class="form-control" placeholder="Enter customer name">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Phone Number</label>
+          <input type="text" id="mc-phone" class="form-control" placeholder="09XX-XXX-XXXX">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" id="mc-email" class="form-control" placeholder="optional">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-cust')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCust()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/layout.js"></script>
+<script>
+Layout.init('Customer Management', 'customers');
+
+function showAlert(msg, type='success') {
+  const el = document.getElementById('alert-area');
+  el.innerHTML = `<div class="alert alert-${type}" data-auto-dismiss>${msg}</div>`;
+  Layout.autoDismiss();
+}
+
+function renderTable() {
+  const q = (document.getElementById('cust-search').value || '').toLowerCase();
+  let custs = DB.getCustomers();
+  if (q) custs = custs.filter(c =>
+    c.name.toLowerCase().includes(q) ||
+    (c.phone||'').includes(q) ||
+    (c.email||'').toLowerCase().includes(q)
+  );
+  custs = [...custs].sort((a,b) => a.name.localeCompare(b.name));
+
+  document.getElementById('cust-count').textContent = custs.length + ' total';
+
+  const sessions = DB.getSessions();
+  const txns     = DB.getTransactions();
+
+  document.getElementById('cust-table').innerHTML = custs.length === 0
+    ? '<div class="empty-state"><h3>No customers found</h3><p>Register a new customer or adjust your search.</p></div>'
+    : `<table>
+        <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Email</th><th>Sessions</th><th>Total Spent</th><th>Registered</th><th>Actions</th></tr></thead>
+        <tbody>${custs.map((c,i) => {
+          const custSessions = sessions.filter(s => s.customer_id === c.id).length;
+          const spent = txns
+            .filter(t => sessions.some(s => s.id === t.session_id && s.customer_id === c.id))
+            .reduce((a,t) => a+t.total_amount, 0);
+          return `<tr>
+            <td class="text-muted">${i+1}</td>
+            <td class="fw-semibold">${c.name}</td>
+            <td>${c.phone||'—'}</td>
+            <td>${c.email||'—'}</td>
+            <td><span class="badge badge-blue">${custSessions}</span></td>
+            <td class="fw-bold" style="color:var(--success)">${DB.formatMoney(spent)}</td>
+            <td class="text-muted">${DB.formatDate(c.created_at)}</td>
+            <td>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline" onclick='openEditModal(${JSON.stringify(c)})'>Edit</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteCust(${c.id})">Delete</button>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>`;
+}
+
+function openAddModal() {
+  document.getElementById('mc-title').textContent = 'Register Customer';
+  document.getElementById('mc-id').value = '';
+  document.getElementById('mc-name').value = '';
+  document.getElementById('mc-phone').value = '';
+  document.getElementById('mc-email').value = '';
+  openModal('modal-cust');
+  setTimeout(() => document.getElementById('mc-name').focus(), 200);
+}
+
+function openEditModal(c) {
+  document.getElementById('mc-title').textContent = 'Edit Customer';
+  document.getElementById('mc-id').value  = c.id;
+  document.getElementById('mc-name').value  = c.name;
+  document.getElementById('mc-phone').value = c.phone||'';
+  document.getElementById('mc-email').value = c.email||'';
+  openModal('modal-cust');
+}
+
+function saveCust() {
+  const name  = document.getElementById('mc-name').value.trim();
+  const phone = document.getElementById('mc-phone').value.trim();
+  const email = document.getElementById('mc-email').value.trim();
+  const id    = parseInt(document.getElementById('mc-id').value);
+  if (!name) { Layout.toast('Customer name is required.', 'danger'); return; }
+  if (id) {
+    DB.updateCustomer(id, { name, phone, email });
+    showAlert('Customer updated.');
+  } else {
+    DB.addCustomer({ name, phone, email });
+    showAlert('Customer registered.');
+  }
+  closeModal('modal-cust');
+  renderTable();
+}
+
+function deleteCust(id) {
+  if (!confirm('Delete this customer?')) return;
+  DB.deleteCustomer(id);
+  renderTable();
+  Layout.toast('Customer deleted.');
+}
+
+renderTable();
+</script>
+</body>
+</html>

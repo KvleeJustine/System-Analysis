@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Users – KJ Net</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar-mount"></div>
+<div class="main">
+  <header class="topbar"><div id="topbar-title"></div><div id="topbar-clock"></div></header>
+  <div class="content">
+    <div id="alert-area"></div>
+    <div class="d-flex justify-between align-center mb-3">
+      <div></div>
+      <button class="btn btn-primary" onclick="openAddModal()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add User
+      </button>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">System Users</h3></div>
+      <div class="table-wrap" id="users-table"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal-user">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="mu-title">Add User</h3>
+      <button class="modal-close" onclick="closeModal('modal-user')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="mu-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" id="mu-name" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" id="mu-username" class="form-control" autocomplete="off">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" id="mu-pass-label">Password</label>
+          <input type="password" id="mu-password" class="form-control" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          <select id="mu-role" class="form-control">
+            <option value="staff">Staff</option>
+            <option value="manager">Manager</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-user')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveUser()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/layout.js"></script>
+<script>
+Layout.init('User Accounts', 'users');
+const me = Auth.currentUser();
+if (me.role !== 'admin') window.location.href = 'dashboard.html';
+
+function showAlert(msg, type='success') {
+  const el = document.getElementById('alert-area');
+  el.innerHTML = `<div class="alert alert-${type}" data-auto-dismiss>${msg}</div>`;
+  Layout.autoDismiss();
+}
+
+function renderTable() {
+  const users = DB.getUsers();
+  const rColors = {admin:'badge-red',staff:'badge-blue',manager:'badge-purple'};
+  document.getElementById('users-table').innerHTML =
+    `<table>
+      <thead><tr><th>#</th><th>Full Name</th><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
+      <tbody>${users.map((u,i) => `
+        <tr>
+          <td class="text-muted">${i+1}</td>
+          <td class="fw-semibold">${u.full_name}</td>
+          <td><code>${u.username}</code></td>
+          <td><span class="badge ${rColors[u.role]||'badge-gray'}">${u.role.charAt(0).toUpperCase()+u.role.slice(1)}</span></td>
+          <td class="text-muted">${DB.formatDate(u.created_at)}</td>
+          <td>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline" onclick='openEditModal(${JSON.stringify(u)})'>Edit</button>
+              ${u.id !== me.id ? `<button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id})">Delete</button>` : ''}
+            </div>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function openAddModal() {
+  document.getElementById('mu-title').textContent = 'Add User';
+  document.getElementById('mu-id').value = '';
+  document.getElementById('mu-name').value = '';
+  document.getElementById('mu-username').value = '';
+  document.getElementById('mu-username').readOnly = false;
+  document.getElementById('mu-password').value = '';
+  document.getElementById('mu-pass-label').textContent = 'Password';
+  document.getElementById('mu-role').value = 'staff';
+  openModal('modal-user');
+}
+
+function openEditModal(u) {
+  document.getElementById('mu-title').textContent = 'Edit User';
+  document.getElementById('mu-id').value = u.id;
+  document.getElementById('mu-name').value = u.full_name;
+  document.getElementById('mu-username').value = u.username;
+  document.getElementById('mu-username').readOnly = true;
+  document.getElementById('mu-password').value = '';
+  document.getElementById('mu-pass-label').textContent = 'New Password (leave blank to keep)';
+  document.getElementById('mu-role').value = u.role;
+  openModal('modal-user');
+}
+
+function saveUser() {
+  const id       = parseInt(document.getElementById('mu-id').value);
+  const name     = document.getElementById('mu-name').value.trim();
+  const username = document.getElementById('mu-username').value.trim();
+  const password = document.getElementById('mu-password').value;
+  const role     = document.getElementById('mu-role').value;
+  if (!name || !username) { Layout.toast('Name and username required.', 'danger'); return; }
+  if (id) {
+    const patch = { full_name: name, role };
+    if (password) patch.password = password;
+    DB.updateUser(id, patch);
+    showAlert('User updated.');
+  } else {
+    if (!password) { Layout.toast('Password required.', 'danger'); return; }
+    if (DB.findUser(username)) { Layout.toast('Username already exists.', 'danger'); return; }
+    DB.addUser({ username, password, full_name: name, role });
+    showAlert('User created.');
+  }
+  closeModal('modal-user');
+  renderTable();
+}
+
+function deleteUser(id) {
+  if (!confirm('Delete this user?')) return;
+  DB.deleteUser(id);
+  renderTable();
+  Layout.toast('User deleted.');
+}
+
+renderTable();
+</script>
+</body>
+</html>

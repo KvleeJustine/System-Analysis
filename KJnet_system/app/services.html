@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Services – KJ Net</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar-mount"></div>
+<div class="main">
+  <header class="topbar"><div id="topbar-title"></div><div id="topbar-clock"></div></header>
+  <div class="content">
+    <div id="alert-area"></div>
+    <div id="session-banner"></div>
+
+    <div class="grid-2" style="gap:18px;margin-bottom:18px;">
+      <!-- Add Service Form -->
+      <div class="card">
+        <div class="card-header">
+          <svg width="17" height="17" fill="none" stroke="var(--primary)" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <h3 class="card-title">Add Service</h3>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">Customer Name</label>
+            <input type="text" id="svc-cust" class="form-control" value="Walk-in">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Service Type <span style="color:red">*</span></label>
+              <select id="svc-type" class="form-control" onchange="onTypeChange()">
+                <option value="">-- Select --</option>
+                <option value="print">🖨️ Printing</option>
+                <option value="scan">📷 Scanning</option>
+                <option value="photocopy">📋 Photocopying</option>
+                <option value="typing">⌨️ Typing</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Quantity</label>
+              <input type="number" id="svc-qty" class="form-control" value="1" min="1" oninput="calcSvcTotal()">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Unit Price (₱)</label>
+              <input type="number" id="svc-price" class="form-control" value="0" step="0.5" oninput="calcSvcTotal()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Total</label>
+              <input type="text" id="svc-total-display" class="form-control" readonly value="₱0.00"
+                style="background:var(--g50);font-weight:700;color:var(--success);">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notes</label>
+            <input type="text" id="svc-notes" class="form-control" placeholder="e.g. colored, A3 size...">
+          </div>
+          <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="doAddService()">Add Service Record</button>
+        </div>
+      </div>
+
+      <!-- Today + Rates -->
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Today's Services</h3></div>
+          <div class="card-body" style="padding:14px;" id="today-summary"></div>
+        </div>
+        <div class="card" id="rates-card">
+          <div class="card-header"><h3 class="card-title">Service Rates</h3></div>
+          <div class="card-body" id="rates-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Service History</h3>
+        <div class="search-wrap" style="max-width:240px;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="search" id="svc-search" placeholder="Search customer…" oninput="renderHistory()">
+        </div>
+        <select id="svc-filter" class="form-control" style="width:130px;font-size:13px;" onchange="renderHistory()">
+          <option value="">All Types</option>
+          <option value="print">Print</option>
+          <option value="scan">Scan</option>
+          <option value="photocopy">Photocopy</option>
+          <option value="typing">Typing</option>
+        </select>
+      </div>
+      <div class="table-wrap" id="svc-history-table"></div>
+    </div>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/layout.js"></script>
+<script>
+Layout.init('Services', 'services');
+const user = Auth.currentUser();
+
+// Check for session param
+const params = new URLSearchParams(location.search);
+const prefillSession = parseInt(params.get('session')) || null;
+const prefillPc = params.get('pc') || '';
+
+if (prefillSession) {
+  document.getElementById('session-banner').innerHTML =
+    `<div class="alert alert-info" style="margin-bottom:14px;">
+      📎 Adding service to active session on <b>${prefillPc}</b>.
+      <a href="computers.html" style="color:var(--primary);font-weight:600;margin-left:8px;">← Back to Computers</a>
+    </div>`;
+  // Pre-fill customer name
+  const s = DB.getSessions().find(s => s.id === prefillSession);
+  if (s) document.getElementById('svc-cust').value = s.customer_name || 'Walk-in';
+}
+
+function showAlert(msg, type='success') {
+  const el = document.getElementById('alert-area');
+  el.innerHTML = `<div class="alert alert-${type}" data-auto-dismiss>${msg}</div>`;
+  Layout.autoDismiss();
+}
+
+function onTypeChange() {
+  const type  = document.getElementById('svc-type').value;
+  const rates = DB.getRates();
+  document.getElementById('svc-price').value = type && rates[type] ? rates[type].price : 0;
+  calcSvcTotal();
+}
+
+function calcSvcTotal() {
+  const qty   = parseFloat(document.getElementById('svc-qty').value)   || 0;
+  const price = parseFloat(document.getElementById('svc-price').value) || 0;
+  document.getElementById('svc-total-display').value = DB.formatMoney(qty * price);
+}
+
+function doAddService() {
+  const type  = document.getElementById('svc-type').value;
+  const qty   = parseInt(document.getElementById('svc-qty').value) || 1;
+  const price = parseFloat(document.getElementById('svc-price').value) || 0;
+  const cust  = document.getElementById('svc-cust').value.trim() || 'Walk-in';
+  const notes = document.getElementById('svc-notes').value.trim();
+  if (!type) { Layout.toast('Please select a service type.', 'danger'); return; }
+
+  const svc = DB.addService({ session_id: prefillSession || null, customer_name: cust, type, quantity: qty, unit_price: price, total: qty * price, notes, staff_id: user.id });
+
+  if (!prefillSession) {
+    // Standalone service — create transaction immediately
+    const txn = DB.addTransaction({
+      session_id: null,
+      customer_name: cust,
+      subtotal_computer: 0,
+      subtotal_services: qty * price,
+      total_amount: qty * price,
+      payment_method: 'cash',
+      amount_paid: qty * price,
+      change_amount: 0,
+      staff_id: user.id,
+    });
+    showAlert(`Service recorded. <a href="receipt.html?txn=${txn.id}" target="_blank" style="color:var(--primary);font-weight:700;">Print Receipt →</a>`);
+  } else {
+    showAlert('Service added to session.');
+  }
+
+  document.getElementById('svc-qty').value = 1;
+  document.getElementById('svc-notes').value = '';
+  document.getElementById('svc-type').value = '';
+  document.getElementById('svc-price').value = 0;
+  document.getElementById('svc-total-display').value = '₱0.00';
+  renderTodaySummary();
+  renderHistory();
+}
+
+function renderTodaySummary() {
+  const today = DB.todayStr();
+  const svcs  = DB.getServices().filter(s => DB.isoToDateStr(s.created_at) === today);
+  const icons = {print:'🖨️',scan:'📷',photocopy:'📋',typing:'⌨️'};
+  const grouped = {};
+  svcs.forEach(s => { grouped[s.type] = grouped[s.type] || {qty:0,total:0}; grouped[s.type].qty+=s.quantity; grouped[s.type].total+=s.total; });
+  const keys = Object.keys(grouped);
+  document.getElementById('today-summary').innerHTML = keys.length === 0
+    ? '<p class="text-muted text-center" style="padding:8px 0;">No services today yet.</p>'
+    : keys.map(t => `
+      <div class="d-flex justify-between" style="padding:7px 0;border-bottom:1px solid var(--g100);">
+        <span>${icons[t]||''} ${t.charAt(0).toUpperCase()+t.slice(1)} <span class="text-muted">(${grouped[t].qty})</span></span>
+        <b style="color:var(--success)">${DB.formatMoney(grouped[t].total)}</b>
+      </div>`).join('');
+}
+
+function renderRates() {
+  const rates = DB.getRates();
+  const isAdmin = user.role === 'admin';
+  document.getElementById('rates-body').innerHTML = isAdmin
+    ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        ${['print','scan','photocopy','typing'].map(t => `
+          <div class="form-group mb-0">
+            <label class="form-label" style="font-size:12px;">${{print:'🖨️ Print',scan:'📷 Scan',photocopy:'📋 Photocopy',typing:'⌨️ Typing'}[t]}</label>
+            <div class="d-flex align-center gap-2">
+              <span class="text-muted" style="font-size:13px;">₱</span>
+              <input type="number" id="rate-${t}" class="form-control" step="0.5" value="${rates[t]?.price||5}">
+            </div>
+          </div>`).join('')}
+      </div>
+      <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="saveRates()">Update Rates</button>`
+    : `<div style="font-size:13.5px;">
+        ${Object.keys(rates).map(t => `
+          <div class="d-flex justify-between" style="padding:5px 0;border-bottom:1px solid var(--g100);">
+            <span>${{print:'🖨️ Print',scan:'📷 Scan',photocopy:'📋 Photocopy',typing:'⌨️ Typing'}[t]||t}</span>
+            <b>${DB.formatMoney(rates[t]?.price||0)} / ${rates[t]?.label||'page'}</b>
+          </div>`).join('')}
+      </div>`;
+}
+
+function saveRates() {
+  const rates = DB.getRates();
+  ['print','scan','photocopy','typing'].forEach(t => {
+    const v = parseFloat(document.getElementById('rate-'+t).value) || 0;
+    rates[t] = { ...rates[t], price: v };
+  });
+  DB.saveRates(rates);
+  Layout.toast('Service rates updated.');
+}
+
+function renderHistory() {
+  const search = (document.getElementById('svc-search').value || '').toLowerCase();
+  const filter = document.getElementById('svc-filter').value;
+  const icons  = {print:'🖨️',scan:'📷',photocopy:'📋',typing:'⌨️'};
+  let svcs = DB.getServices();
+  if (search) svcs = svcs.filter(s => s.customer_name.toLowerCase().includes(search));
+  if (filter) svcs = svcs.filter(s => s.type === filter);
+  const rows = [...svcs].reverse();
+
+  document.getElementById('svc-history-table').innerHTML = rows.length === 0
+    ? '<div class="empty-state"><p>No service records found.</p></div>'
+    : `<table>
+        <thead><tr><th>#</th><th>Customer</th><th>Type</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Notes</th><th>Date/Time</th><th></th></tr></thead>
+        <tbody>${rows.map((s,i) => `
+          <tr>
+            <td class="text-muted">${i+1}</td>
+            <td class="fw-semibold">${s.customer_name}</td>
+            <td><span class="badge badge-blue">${icons[s.type]||''} ${s.type.charAt(0).toUpperCase()+s.type.slice(1)}</span></td>
+            <td>${s.quantity}</td>
+            <td>${DB.formatMoney(s.unit_price)}</td>
+            <td class="fw-bold" style="color:var(--success)">${DB.formatMoney(s.total)}</td>
+            <td class="text-muted">${s.notes||'—'}</td>
+            <td class="text-muted" style="white-space:nowrap">${DB.formatDateTime(s.created_at)}</td>
+            <td><button class="btn btn-sm btn-danger" onclick="deleteSvc(${s.id})">Delete</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+}
+
+function deleteSvc(id) {
+  if (!confirm('Delete this service record?')) return;
+  DB.deleteService(id);
+  renderHistory();
+  renderTodaySummary();
+}
+
+renderTodaySummary();
+renderRates();
+renderHistory();
+</script>
+</body>
+</html>

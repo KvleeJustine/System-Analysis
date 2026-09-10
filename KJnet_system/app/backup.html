@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Backup & Restore – KJ Net</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar-mount"></div>
+<div class="main">
+  <header class="topbar"><div id="topbar-title"></div><div id="topbar-clock"></div></header>
+  <div class="content">
+    <div id="alert-area"></div>
+
+    <div class="grid-2" style="gap:18px;margin-bottom:18px;">
+      <!-- Backup -->
+      <div class="card">
+        <div class="card-header">
+          <svg width="17" height="17" fill="none" stroke="var(--primary)" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <h3 class="card-title">Create Backup</h3>
+        </div>
+        <div class="card-body">
+          <p class="text-muted mb-2" style="font-size:13.5px;line-height:1.6;margin-bottom:12px;">
+            Downloads all system data as a <code>.json</code> file. Keep it somewhere safe — you can restore from it anytime.
+          </p>
+          <div class="alert alert-info" style="font-size:13px;">
+            ℹ Includes: customers, computers, sessions, services, transactions, rates, and user accounts.
+          </div>
+          <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="doBackup()">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download Backup Now
+          </button>
+        </div>
+      </div>
+
+      <!-- Restore -->
+      <div class="card">
+        <div class="card-header">
+          <svg width="17" height="17" fill="none" stroke="var(--warning)" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          <h3 class="card-title">Restore from Backup</h3>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-warning" style="font-size:13px;margin-bottom:14px;">
+            ⚠️ <b>Warning:</b> Restoring will overwrite ALL current data. This cannot be undone.
+          </div>
+          <div class="form-group">
+            <label class="form-label">Select Backup File (.json)</label>
+            <input type="file" id="restore-file" class="form-control" accept=".json">
+          </div>
+          <button class="btn btn-warning" style="width:100%;justify-content:center;" onclick="doRestore()">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            Restore Database
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data Summary -->
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Current Data Summary</h3></div>
+      <div class="card-body" id="data-summary"></div>
+    </div>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/layout.js"></script>
+<script>
+Layout.init('Backup & Restore', 'backup');
+
+function showAlert(msg, type='success') {
+  const el = document.getElementById('alert-area');
+  el.innerHTML = `<div class="alert alert-${type}" data-auto-dismiss>${msg}</div>`;
+  Layout.autoDismiss();
+}
+
+function doBackup() {
+  const data     = DB.exportBackup();
+  const filename = 'kjnet_backup_' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.json';
+  const blob     = new Blob([data], { type: 'application/json' });
+  const url      = URL.createObjectURL(blob);
+  const a        = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  showAlert('Backup downloaded: ' + filename);
+}
+
+function doRestore() {
+  const file = document.getElementById('restore-file').files[0];
+  if (!file) { showAlert('Please select a backup file.', 'danger'); return; }
+  if (!confirm('This will overwrite ALL current data. Are you sure?')) return;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      DB.importBackup(e.target.result);
+      showAlert('Restore successful! Reloading…');
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+      showAlert('Restore failed: ' + err.message, 'danger');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderSummary() {
+  const items = [
+    { label:'Customers',    count: DB.getCustomers().length,    icon:'👥' },
+    { label:'Computers',    count: DB.getComputers().length,    icon:'💻' },
+    { label:'Sessions',     count: DB.getSessions().length,     icon:'⏱️' },
+    { label:'Services',     count: DB.getServices().length,     icon:'🖨️' },
+    { label:'Transactions', count: DB.getTransactions().length, icon:'🧾' },
+    { label:'Users',        count: DB.getUsers().length,        icon:'👤' },
+  ];
+  document.getElementById('data-summary').innerHTML =
+    `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;">
+      ${items.map(i => `
+        <div style="text-align:center;padding:18px;background:var(--g50);border-radius:10px;border:1px solid var(--g200);">
+          <div style="font-size:28px;margin-bottom:6px;">${i.icon}</div>
+          <div style="font-size:22px;font-weight:700;">${i.count}</div>
+          <div style="font-size:12px;color:var(--g500);font-weight:500;">${i.label}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+renderSummary();
+</script>
+</body>
+</html>

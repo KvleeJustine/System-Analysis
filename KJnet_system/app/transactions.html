@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Transactions – KJ Net</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar-mount"></div>
+<div class="main">
+  <header class="topbar"><div id="topbar-title"></div><div id="topbar-clock"></div></header>
+  <div class="content">
+
+    <div class="d-flex align-center justify-between mb-3" style="flex-wrap:wrap;gap:10px;">
+      <div class="d-flex gap-3 align-center" style="flex-wrap:wrap;">
+        <div class="search-wrap">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="search" id="txn-search" placeholder="Search ref or customer…" oninput="render()">
+        </div>
+        <div class="d-flex align-center gap-2">
+          <label style="font-size:13px;color:var(--g600);">Date:</label>
+          <input type="date" id="txn-date" class="form-control" style="width:160px;font-size:13px;" onchange="render()">
+        </div>
+      </div>
+      <div class="d-flex gap-3" id="day-stats"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Transaction History</h3>
+        <span class="badge badge-blue" id="txn-count"></span>
+      </div>
+      <div class="table-wrap" id="txn-table"></div>
+    </div>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/layout.js"></script>
+<script>
+Layout.init('Transactions', 'transactions');
+
+// Default to today
+document.getElementById('txn-date').value = DB.todayStr();
+
+function render() {
+  const q    = (document.getElementById('txn-search').value || '').toLowerCase();
+  const date = document.getElementById('txn-date').value;
+  let txns   = DB.getTransactions();
+
+  if (date) txns = txns.filter(t => DB.isoToDateStr(t.created_at) === date);
+  if (q)    txns = txns.filter(t => t.reference.toLowerCase().includes(q) || (t.customer_name||'').toLowerCase().includes(q));
+
+  const dayTotal = txns.reduce((s,t) => s + t.total_amount, 0);
+  document.getElementById('day-stats').innerHTML = `
+    <div class="stat-card" style="padding:10px 16px;margin:0;">
+      <div><div class="stat-value" style="font-size:18px;">${txns.length}</div><div class="stat-label">Transactions</div></div>
+    </div>
+    <div class="stat-card" style="padding:10px 16px;margin:0;background:var(--success-light);">
+      <div><div class="stat-value" style="font-size:18px;color:var(--success)">${DB.formatMoney(dayTotal)}</div><div class="stat-label">Total Sales</div></div>
+    </div>`;
+
+  document.getElementById('txn-count').textContent = txns.length + ' records';
+
+  const reversed = [...txns].reverse();
+  const mColors = {cash:'badge-green',gcash:'badge-blue',maya:'badge-purple'};
+  const mLabels = {cash:'💵 Cash',gcash:'📱 GCash',maya:'💜 Maya'};
+
+  document.getElementById('txn-table').innerHTML = reversed.length === 0
+    ? '<div class="empty-state"><p>No transactions found for this period.</p></div>'
+    : `<table>
+        <thead><tr><th>Reference</th><th>Customer</th><th>PC Time</th><th>Services</th><th>Total</th><th>Paid</th><th>Change</th><th>Method</th><th>Time</th><th></th></tr></thead>
+        <tbody>${reversed.map(t => `
+          <tr>
+            <td><span class="badge badge-blue">${t.reference}</span></td>
+            <td class="fw-semibold">${t.customer_name||'Walk-in'}</td>
+            <td>${t.subtotal_computer > 0 ? DB.formatMoney(t.subtotal_computer) : '<span class="text-muted">—</span>'}</td>
+            <td>${t.subtotal_services > 0 ? DB.formatMoney(t.subtotal_services) : '<span class="text-muted">—</span>'}</td>
+            <td class="fw-bold" style="color:var(--success)">${DB.formatMoney(t.total_amount)}</td>
+            <td>${DB.formatMoney(t.amount_paid)}</td>
+            <td>${DB.formatMoney(t.change_amount)}</td>
+            <td><span class="badge ${mColors[t.payment_method]||'badge-gray'}">${mLabels[t.payment_method]||t.payment_method}</span></td>
+            <td class="text-muted" style="white-space:nowrap">${DB.formatTime(t.created_at)}</td>
+            <td><a href="receipt.html?txn=${t.id}" target="_blank" class="btn btn-sm btn-outline">Receipt</a></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Receipt – KJ Net</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+body{background:var(--g100);display:flex;flex-direction:column;align-items:center;padding:20px;}
+.no-print{margin-bottom:18px;display:flex;gap:10px;}
+@media print{body{background:white;padding:0;}.no-print{display:none!important;}}
+</style>
+</head>
+<body>
+<div class="no-print">
+  <button onclick="window.print()" class="btn btn-primary">
+    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+    Print Receipt
+  </button>
+  <button onclick="window.close()" class="btn btn-secondary">Close</button>
+  <a href="transactions.html" class="btn btn-secondary">← Transactions</a>
+</div>
+
+<div class="receipt-box" id="receipt-content">Loading…</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script>
+Auth.requireLogin();
+const params = new URLSearchParams(location.search);
+const txnId  = parseInt(params.get('txn'));
+
+const txn = DB.getTransactions().find(t => t.id === txnId);
+if (!txn) {
+  document.getElementById('receipt-content').innerHTML = '<p class="text-center text-muted">Receipt not found.</p>';
+} else {
+  const session  = txn.session_id ? DB.getSessions().find(s => s.id === txn.session_id) : null;
+  const computers = DB.getComputers();
+  const pc       = session ? computers.find(c => c.id === session.computer_id) : null;
+  const services = session ? DB.getServicesForSession(session.id) : [];
+  const users    = DB.getUsers();
+  const staff    = users.find(u => u.id === txn.staff_id);
+  const icons    = {print:'🖨️',scan:'📷',photocopy:'📋',typing:'⌨️'};
+  const mLabels  = {cash:'CASH',gcash:'GCASH',maya:'MAYA'};
+
+  let html = `
+    <h2>KJ NET</h2>
+    <p class="sub">Internet Cafe</p>
+    <p class="sub">Official Receipt</p>
+    <hr class="r-divider">
+    <div class="r-row"><span>Receipt #</span><span>${txn.reference}</span></div>
+    <div class="r-row"><span>Date</span><span>${new Date(txn.created_at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</span></div>
+    <div class="r-row"><span>Time</span><span>${new Date(txn.created_at).toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span></div>
+    <div class="r-row"><span>Customer</span><span>${txn.customer_name||'Walk-in'}</span></div>
+    <div class="r-row"><span>Cashier</span><span>${staff?.full_name||'—'}</span></div>`;
+
+  if (session && pc) {
+    const dur = session.duration_minutes || 0;
+    html += `
+    <hr class="r-divider">
+    <div style="font-weight:bold;margin:5px 0;">💻 Computer Usage</div>
+    <div class="r-row"><span>${pc.name}</span><span></span></div>
+    <div class="r-row"><span>Start</span><span>${new Date(session.start_time).toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'})}</span></div>
+    <div class="r-row"><span>End</span><span>${new Date(session.end_time).toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'})}</span></div>
+    <div class="r-row"><span>Duration</span><span>${DB.formatDuration(dur)}</span></div>
+    <div class="r-row"><span>Rate</span><span>₱${pc.rate_per_hour}/hr</span></div>
+    <div class="r-row"><span>Subtotal</span><span>₱${txn.subtotal_computer.toFixed(2)}</span></div>`;
+  }
+
+  if (services.length > 0) {
+    html += `<hr class="r-divider"><div style="font-weight:bold;margin:5px 0;">🖨️ Services</div>`;
+    services.forEach(s => {
+      html += `<div class="r-row"><span>${icons[s.type]||''} ${s.type.charAt(0).toUpperCase()+s.type.slice(1)} x${s.quantity}</span><span>₱${s.total.toFixed(2)}</span></div>`;
+      if (s.notes) html += `<div style="font-size:11px;color:#888;padding-left:10px;">${s.notes}</div>`;
+    });
+    html += `<div class="r-row"><span>Subtotal</span><span>₱${txn.subtotal_services.toFixed(2)}</span></div>`;
+  }
+
+  html += `
+    <hr class="r-divider">
+    <div class="r-row total"><span>TOTAL</span><span>₱${txn.total_amount.toFixed(2)}</span></div>
+    <div class="r-row"><span>Payment (${mLabels[txn.payment_method]||txn.payment_method})</span><span>₱${txn.amount_paid.toFixed(2)}</span></div>
+    <div class="r-row"><span>Change</span><span>₱${txn.change_amount.toFixed(2)}</span></div>
+    <hr class="r-divider">
+    <div class="r-footer">
+      <p>Thank you for visiting KJ Net!</p>
+      <p>Come back again 😊</p>
+    </div>`;
+
+  document.getElementById('receipt-content').innerHTML = html;
+  document.title = 'Receipt ' + txn.reference + ' – KJ Net';
+}
+</script>
+</body>
+</html>

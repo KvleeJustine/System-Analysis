@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Sales Reports – KJ Net</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar-mount"></div>
+<div class="main">
+  <header class="topbar"><div id="topbar-title"></div><div id="topbar-clock"></div></header>
+  <div class="content">
+    <!-- Period filter -->
+    <div class="card mb-3" style="margin-bottom:18px;">
+      <div class="card-body" style="padding:14px;">
+        <div class="d-flex align-center gap-3" style="flex-wrap:wrap;">
+          <button class="btn btn-sm btn-primary period-btn" data-period="today">Today</button>
+          <button class="btn btn-sm btn-secondary period-btn" data-period="yesterday">Yesterday</button>
+          <button class="btn btn-sm btn-secondary period-btn" data-period="week">This Week</button>
+          <button class="btn btn-sm btn-secondary period-btn" data-period="month">This Month</button>
+          <button class="btn btn-sm btn-secondary period-btn" data-period="custom">Custom</button>
+          <div id="custom-range" class="d-flex align-center gap-2" style="display:none!important;">
+            <input type="date" id="range-start" class="form-control" style="width:150px;">
+            <span class="text-muted">to</span>
+            <input type="date" id="range-end" class="form-control" style="width:150px;">
+            <button class="btn btn-sm btn-primary" onclick="render()">Apply</button>
+          </div>
+          <button class="btn btn-sm btn-outline no-print" onclick="window.print()">🖨️ Print</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="report-content"></div>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/layout.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+Layout.init('Sales Reports', 'reports');
+
+let currentPeriod = 'today';
+let chartInstance = null;
+
+// Period buttons
+document.querySelectorAll('.period-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.period-btn').forEach(b => b.className = 'btn btn-sm btn-secondary period-btn');
+    btn.className = 'btn btn-sm btn-primary period-btn';
+    currentPeriod = btn.dataset.period;
+    const cr = document.getElementById('custom-range');
+    cr.style.display = currentPeriod === 'custom' ? 'flex' : 'none';
+    if (currentPeriod !== 'custom') render();
+  });
+});
+
+function getDateRange() {
+  const now = new Date();
+  const fmt = d => d.toISOString().slice(0,10);
+  switch (currentPeriod) {
+    case 'today':     return { start: fmt(now), end: fmt(now), label: 'Today' };
+    case 'yesterday': { const d = new Date(now); d.setDate(d.getDate()-1); return { start: fmt(d), end: fmt(d), label: 'Yesterday' }; }
+    case 'week': {
+      const d = new Date(now);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day===0?-6:1);
+      const mon = new Date(d.setDate(diff));
+      return { start: fmt(mon), end: fmt(now), label: 'This Week' };
+    }
+    case 'month': return { start: now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-01', end: fmt(now), label: 'This Month' };
+    case 'custom': {
+      const s = document.getElementById('range-start').value || fmt(now);
+      const e = document.getElementById('range-end').value   || fmt(now);
+      return { start: s, end: e, label: s + ' – ' + e };
+    }
+  }
+}
+
+function inRange(iso, start, end) {
+  const d = iso.slice(0,10);
+  return d >= start && d <= end;
+}
+
+function render() {
+  const { start, end, label } = getDateRange();
+  const txns    = DB.getTransactions().filter(t => inRange(t.created_at, start, end));
+  const svcs    = DB.getServices().filter(s => inRange(s.created_at, start, end));
+  const sessions = DB.getSessions().filter(s => s.status === 'completed' && s.end_time && inRange(s.end_time, start, end));
+  const computers = DB.getComputers();
+
+  const totalRev   = txns.reduce((a,t) => a+t.total_amount, 0);
+  const pcRev      = txns.reduce((a,t) => a+t.subtotal_computer, 0);
+  const svcRev     = txns.reduce((a,t) => a+t.subtotal_services, 0);
+
+  // Payment breakdown
+  const byPayment = {};
+  txns.forEach(t => { byPayment[t.payment_method] = (byPayment[t.payment_method]||0) + t.total_amount; });
+
+  // Service breakdown
+  const bySvc = {};
+  svcs.forEach(s => { bySvc[s.type] = bySvc[s.type]||{qty:0,total:0}; bySvc[s.type].qty+=s.quantity; bySvc[s.type].total+=s.total; });
+
+  // Daily data for chart
+  const dailyMap = {};
+  txns.forEach(t => { const d=t.created_at.slice(0,10); dailyMap[d]=(dailyMap[d]||0)+t.total_amount; });
+  const days   = Object.keys(dailyMap).sort();
+  const dayVals = days.map(d => dailyMap[d]);
+
+  // PC utilization
+  const pcMap = {};
+  sessions.forEach(s => {
+    const pc = computers.find(c => c.id === s.computer_id);
+    if (!pc) return;
+    pcMap[pc.name] = pcMap[pc.name] || { sessions:0, mins:0, revenue:0 };
+    pcMap[pc.name].sessions++;
+    pcMap[pc.name].mins += s.duration_minutes||0;
+    pcMap[pc.name].revenue += s.amount||0;
+  });
+
+  const mColors = {cash:'badge-green',gcash:'badge-blue',maya:'badge-purple'};
+  const mLabels = {cash:'💵 Cash',gcash:'📱 GCash',maya:'💜 Maya'};
+  const icons   = {print:'🖨️',scan:'📷',photocopy:'📋',typing:'⌨️'};
+
+  document.getElementById('report-content').innerHTML = `
+  <div class="stats-grid mb-3" style="margin-bottom:18px;">
+    <div class="stat-card">
+      <div class="stat-icon blue"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+      <div><div class="stat-value">${DB.formatMoney(totalRev)}</div><div class="stat-label">Total Revenue – ${label}</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon orange"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+      <div><div class="stat-value">${DB.formatMoney(pcRev)}</div><div class="stat-label">Computer Revenue</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon purple"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 17H17.01M3 6h18M3 10h18M3 14h10"/></svg></div>
+      <div><div class="stat-value">${DB.formatMoney(svcRev)}</div><div class="stat-label">Services Revenue</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon green"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+      <div><div class="stat-value">${txns.length}</div><div class="stat-label">Transactions</div></div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="gap:18px;margin-bottom:18px;">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Daily Revenue</h3></div>
+      <div class="card-body">
+        ${days.length === 0
+          ? '<div class="empty-state" style="padding:20px;"><p>No data for this period.</p></div>'
+          : '<canvas id="rev-chart" height="200"></canvas>'}
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Payment Methods</h3></div>
+        <div class="card-body" style="padding:14px;">
+          ${Object.keys(byPayment).length === 0
+            ? '<p class="text-muted text-center">No data.</p>'
+            : Object.entries(byPayment).map(([m,v]) => {
+                const pct = totalRev > 0 ? Math.round(v/totalRev*100) : 0;
+                return `<div style="margin-bottom:12px;">
+                  <div class="d-flex justify-between" style="margin-bottom:4px;">
+                    <span class="fw-semibold">${mLabels[m]||m}</span>
+                    <span>${DB.formatMoney(v)} <span class="text-muted">(${pct}%)</span></span>
+                  </div>
+                  <div class="progress"><div class="progress-bar" style="width:${pct}%"></div></div>
+                </div>`;
+              }).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Services Breakdown</h3></div>
+        <div class="card-body" style="padding:14px;">
+          ${Object.keys(bySvc).length === 0
+            ? '<p class="text-muted text-center">No services.</p>'
+            : Object.entries(bySvc).map(([t,v]) =>
+                `<div class="d-flex justify-between" style="padding:6px 0;border-bottom:1px solid var(--g100);">
+                  <span>${icons[t]||''} ${t.charAt(0).toUpperCase()+t.slice(1)} <span class="text-muted">(${v.qty} pcs)</span></span>
+                  <b style="color:var(--success)">${DB.formatMoney(v.total)}</b>
+                </div>`).join('')}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3" style="margin-bottom:18px;">
+    <div class="card-header"><h3 class="card-title">Computer Utilization</h3></div>
+    <div class="table-wrap">
+      ${Object.keys(pcMap).length === 0
+        ? '<div class="empty-state" style="padding:20px;"><p>No usage data.</p></div>'
+        : `<table><thead><tr><th>PC</th><th>Sessions</th><th>Total Time</th><th>Revenue</th></tr></thead><tbody>
+            ${Object.entries(pcMap).map(([name,v]) => `
+              <tr>
+                <td class="fw-semibold">${name}</td>
+                <td><span class="badge badge-blue">${v.sessions}</span></td>
+                <td>${DB.formatDuration(v.mins)}</td>
+                <td class="fw-bold" style="color:var(--success)">${DB.formatMoney(v.revenue)}</td>
+              </tr>`).join('')}
+            </tbody></table>`}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Transactions – ${label}</h3>
+      <span class="badge badge-green">${txns.length} records</span>
+    </div>
+    <div class="table-wrap">
+      ${txns.length === 0
+        ? '<div class="empty-state" style="padding:20px;"><p>No transactions.</p></div>'
+        : `<table><thead><tr><th>Ref</th><th>Customer</th><th>PC</th><th>Services</th><th>Total</th><th>Method</th><th>Time</th><th></th></tr></thead>
+          <tbody>${[...txns].reverse().slice(0,50).map(t => `
+            <tr>
+              <td><span class="badge badge-blue">${t.reference}</span></td>
+              <td>${t.customer_name||'Walk-in'}</td>
+              <td>${t.subtotal_computer>0?DB.formatMoney(t.subtotal_computer):'<span class="text-muted">—</span>'}</td>
+              <td>${t.subtotal_services>0?DB.formatMoney(t.subtotal_services):'<span class="text-muted">—</span>'}</td>
+              <td class="fw-bold" style="color:var(--success)">${DB.formatMoney(t.total_amount)}</td>
+              <td><span class="badge ${mColors[t.payment_method]||'badge-gray'}">${mLabels[t.payment_method]||t.payment_method}</span></td>
+              <td class="text-muted" style="white-space:nowrap">${DB.formatDateTime(t.created_at)}</td>
+              <td><a href="receipt.html?txn=${t.id}" target="_blank" class="btn btn-sm btn-outline no-print">Receipt</a></td>
+            </tr>`).join('')}
+          </tbody></table>`}
+    </div>
+  </div>`;
+
+  // Draw chart
+  if (days.length > 0) {
+    if (chartInstance) chartInstance.destroy();
+    const ctx = document.getElementById('rev-chart').getContext('2d');
+    chartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: days.map(d => new Date(d+'T00:00:00').toLocaleDateString('en-PH',{month:'short',day:'numeric'})),
+        datasets: [{ label:'Revenue (₱)', data: dayVals, backgroundColor:'rgba(37,99,235,.7)', borderColor:'#2563eb', borderWidth:2, borderRadius:6 }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend:{display:false}, tooltip:{callbacks:{label:c=>'₱'+c.raw.toFixed(2)}} },
+        scales: { y:{ticks:{callback:v=>'₱'+v}} }
+      }
+    });
+  }
+}
+
+// Init date range defaults
+const today = DB.todayStr();
+document.getElementById('range-start').value = today;
+document.getElementById('range-end').value   = today;
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Dashboard – KJ Net</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar-mount"></div>
+<div class="main">
+  <header class="topbar">
+    <div id="topbar-title"></div>
+    <div id="topbar-clock"></div>
+  </header>
+  <div class="content" id="page-content"></div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/layout.js"></script>
+<script>
+Layout.init('Dashboard', 'dashboard');
+const user = Auth.currentUser();
+
+function renderDashboard() {
+  const computers    = DB.getComputers();
+  const sessions     = DB.getSessions();
+  const transactions = DB.getTransactions();
+  const customers    = DB.getCustomers();
+  const today        = DB.todayStr();
+
+  const available = computers.filter(c => c.status === 'available').length;
+  const occupied  = computers.filter(c => c.status === 'occupied').length;
+  const todayTxns = transactions.filter(t => DB.isoToDateStr(t.created_at) === today);
+  const todaySales = todayTxns.reduce((s, t) => s + t.total_amount, 0);
+  const activeSessions = sessions.filter(s => s.status === 'active');
+
+  document.getElementById('page-content').innerHTML = `
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon green"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+      <div><div class="stat-value">${available}</div><div class="stat-label">Available PCs</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon orange"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+      <div><div class="stat-value">${occupied}</div><div class="stat-label">In Use</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon blue"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+      <div><div class="stat-value">${DB.formatMoney(todaySales)}</div><div class="stat-label">Today's Sales</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon purple"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div>
+      <div><div class="stat-value">${customers.length}</div><div class="stat-label">Total Customers</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon green"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+      <div><div class="stat-value">${todayTxns.length}</div><div class="stat-label">Today's Transactions</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon blue"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+      <div><div class="stat-value">${computers.length}</div><div class="stat-label">Total PCs</div></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <svg width="17" height="17" fill="none" stroke="var(--warning)" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <h3 class="card-title">Active Sessions</h3>
+        <a href="computers.html" class="btn btn-sm btn-outline">Manage</a>
+      </div>
+      <div class="table-wrap">
+        ${activeSessions.length === 0
+          ? '<div class="empty-state" style="padding:28px;"><p>No active sessions right now.</p></div>'
+          : `<table><thead><tr><th>PC</th><th>Customer</th><th>Started</th><th>Duration</th><th>Est. Cost</th></tr></thead><tbody>
+          ${activeSessions.map(s => {
+            const pc   = computers.find(c => c.id === s.computer_id);
+            const mins = Math.round((Date.now() - new Date(s.start_time)) / 60000);
+            const cost = (mins / 60) * (pc ? pc.rate_per_hour : 30);
+            return `<tr>
+              <td><b>${pc ? pc.name : 'PC'}</b></td>
+              <td>${s.customer_name || 'Walk-in'}</td>
+              <td class="text-muted">${DB.formatTime(s.start_time)}</td>
+              <td style="color:var(--warning);font-weight:600">${DB.formatDuration(mins)}</td>
+              <td style="color:var(--success);font-weight:600">${DB.formatMoney(cost)}</td>
+            </tr>`;
+          }).join('')}
+          </tbody></table>`
+        }
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <svg width="17" height="17" fill="none" stroke="var(--primary)" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <h3 class="card-title">Recent Transactions</h3>
+        <a href="transactions.html" class="btn btn-sm btn-outline">View All</a>
+      </div>
+      <div class="table-wrap">
+        ${todayTxns.length === 0
+          ? '<div class="empty-state" style="padding:28px;"><p>No transactions today yet.</p></div>'
+          : `<table><thead><tr><th>Ref</th><th>Customer</th><th>Amount</th><th>Time</th></tr></thead><tbody>
+          ${[...todayTxns].reverse().slice(0,8).map(t =>
+            `<tr>
+              <td><span class="badge badge-blue">${t.reference}</span></td>
+              <td>${t.customer_name || 'Walk-in'}</td>
+              <td style="color:var(--success);font-weight:700">${DB.formatMoney(t.total_amount)}</td>
+              <td class="text-muted">${DB.formatTime(t.created_at)}</td>
+            </tr>`
+          ).join('')}
+          </tbody></table>`
+        }
+      </div>
+    </div>
+  </div>`;
+}
+
+renderDashboard();
+// Refresh every 30s
+setInterval(renderDashboard, 30000);
+</script>
+</body>
+</html>
